@@ -1,5 +1,5 @@
 {
     "name": "yxml",
     "description": "WIP XML parsing library",
-    "license": "BSL-1.0"
+    "license": "MIT"
 }
