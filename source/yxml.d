@@ -109,11 +109,11 @@ public
                             break;
 
                         case YXML_ATTRSTART:
-                            current._attributes ~= unique_new!XmlAttr(parser.elem, current);
+                            current._attributes ~= unique_new!XmlAttr(parser.attr, current);
                             currentAttr = current._attributes[$-1].get;
                             break;
 
-                        case YXML_ATTRVAL:                           
+                        case YXML_ATTRVAL:
                             currentAttr._value.appendCString(parser.data.ptr);
                             break;
 
@@ -228,6 +228,7 @@ public
         {
             return _content.toDString();
         }
+        alias textContent = content;
 
         /// Returns: parent, if any. If none, this is the document root.
         XmlElement parentNode()
@@ -295,11 +296,12 @@ public
         ///ditto
         alias nextElementSibling = nextSibling;
 
+        // <ATTRIBUTES>
 
         /// `attributes` returns a foreach-able range of attributes.
         auto attributes()
         {
-            return AttributeRange(this, 0, childElementCount());
+            return AttributeRange(this, 0, _attributes.size());
         }
 
         /// Returns borrowed reference to an attribute, as an XmlAttr node.
@@ -312,6 +314,40 @@ public
                     return attr;
             }
             return null;
+        }
+
+        /// Returns the value of a specified attribute on the element.
+        const(char)[] getAttribute(const(char)[] attrName)
+        {
+            XmlAttr attr = getAttributeNode(attrName);
+            if (attr is null)
+                return null;
+            return attr.value;
+        }
+
+        // </ATTRIBUTES>
+
+
+        /// Iterate children by tag name.
+        auto getChildrenByTagName(const(char)[] name)
+        {
+            return TagNameChildRange(this, 0, childElementCount(), name);
+        }
+
+        /// Firt child with a given tag name, or `null` if doesn't exist.
+        XmlElement firstChildByTagName(const(char)[] name)
+        {
+            auto r = getChildrenByTagName(name);
+            if (r.empty)
+                return null;
+            else
+                return r.front();
+        }
+
+        /// Returns: `true` if at least one child with given tag name exists.
+        bool hasChildWithTagName(const(char)[] name)
+        {
+            return firstChildByTagName(name) !is null;
         }
 
     private:
@@ -355,6 +391,46 @@ public
             size_t length()    { return stop - start; }
             XmlAttr front()    { return elem._attributes[start].get(); }
             XmlAttr opIndex(size_t index) { return elem._attributes[start + index].get(); }
+        }
+
+        static struct TagNameChildRange
+        {
+        nothrow @nogc:
+
+            XmlElement elem;
+            size_t start, stop;
+            const(char)[] nameSearched;
+
+            bool empty()
+            { 
+                return !progressUntilMatch();
+            }
+
+            void popFront()
+            { 
+                const(char)[] s = nameSearched;
+                start += 1;
+                progressUntilMatch();
+            }
+            XmlElement front() { return elem._children[start].get(); }
+
+            private bool match(XmlElement candidate)
+            {
+                return candidate.tagName() == nameSearched;
+            }
+
+            // return true on match
+            private bool progressUntilMatch()
+            {
+                while(start < stop)
+                {
+                    if (match(elem._children[start].get))
+                        return true;
+
+                    start += 1;
+                }
+                return false; // no match found
+            }
         }
     }
 
