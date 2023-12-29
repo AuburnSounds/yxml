@@ -34,7 +34,6 @@ nothrow @nogc:
 // - [x] simplified DOM API, this is only useful to parse a simplified subset of XML.
 //       (no comments, no text nodes, no Processing Instructions => only Element exists)
 // - [x] either depends upon numem, or no-dependency
-// - [ ] ideally should work at CTFE if needed
 // - [x] @nogc nothrow no-exc
 // - [ ] easy to parse things
 
@@ -167,10 +166,7 @@ public
         ~this()
         {
             setError("uninitialized");
-            if (!__ctfe)
-            {
-                free(_mergedAlloc);
-            }
+            free(_mergedAlloc);
         }
 
     private:
@@ -200,15 +196,8 @@ public
         {
             if (_mergedAlloc !is null)
                 return; // already allocated. Reusing XmlDocument is thus a bit faster.
-
             enum size_t allocSize = yxml_t.sizeof + BUFSIZE;
-            if (__ctfe)
-            {
-                ubyte[allocSize] ctfeSpace;
-                _mergedAlloc = cast(yxml_t*) ctfeSpace.ptr;
-            }
-            else
-                _mergedAlloc = cast(yxml_t*) malloc(allocSize);
+            _mergedAlloc = cast(yxml_t*) malloc(allocSize);
         }
     }
 
@@ -478,19 +467,6 @@ string yxml_error_string(yxml_ret_t r)
  * </TagName
  *   '>' ELEMEND
  */
-
-struct Internals
-{
-    /*
-    static void* ctfeMalloc(size_t size) nothrow
-    {
-        assert(__ctfe);
-        ubyte[] storage = (new ubyte[size]).ptr;        
-        return storage.ptr;
-    }*/
-}
-
-
 struct yxml_t
 {
     /* PUBLIC (read-only) */
@@ -1668,7 +1644,7 @@ yxml_ret_t yxml_eof(yxml_t *x)
 // </PARSER ENDS HERE>
 //
 
-unittest
+nothrow @nogc unittest 
 {
     XmlDocument doc;
     assert(doc.isError);
@@ -1677,20 +1653,4 @@ unittest
     XmlElement root = doc.root;
     assert(root.tagName == "root");
     assert(root.childNodes.length == 3);
-}
-
-unittest
-{
-    XmlDocument parseAtCTFE(string s)
-    {
-        XmlDocument doc;
-        assert(doc.isError);
-        doc.parse(s);
-        assert(!doc.isError);
-        return doc;
-    }
-    enum XmlDocument document = parseAtCTFE(`<?xml version="1.0" encoding="UTF-8" ?><root><test /><test/><test></test></root>`);
-    enum XmlElement root = doc.root;
-    static assert(root.tagName == "root");
-    static assert(root.childNodes.length == 3);
 }
