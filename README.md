@@ -79,7 +79,7 @@ void parseCustomer(XmlElement customer)
 }
 ```
 
-> 🧑‍💼 _**Pro XML parsing tip:** You can be even clearer in intent by using `.hasChildWithTagName`.
+> 🧑‍💼 _**Pro XML parsing tip:** You can be even clearer in intent by using `.hasChildWithTagName`._
 
 
 
@@ -97,7 +97,7 @@ void parseSupportDeskFile(XmlElement parent)
 }
 ```
 
-> _🧑‍💼 **Pro XML parsing tip:** Use .array to get a slice rather than a range._
+> 🧑‍💼 _**Pro XML parsing tip:** Use .array to get a slice rather than a range._
 > ```d
 > import std.array;
 > XmlElement[] elems = node.getChildrenByTagName("customer").array;
