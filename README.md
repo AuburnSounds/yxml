@@ -1,6 +1,6 @@
 # yxml
 
-The `yxml` [DUB package](https://code.dlang.org/packages/yxml) is a simple that is designed to parse a subset of XML withing the constraints of restricted D.
+The `yxml` [DUB package](https://code.dlang.org/packages/yxml) is a simple library that is designed to parse a subset of XML withing the constraints of restricted D.
 
 - Allows XML parsing in `nothrow @nogc`.
 - One file, but depends on [`numem`](https://code.dlang.org/packages/numem) package for scoped DOM.
