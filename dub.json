@@ -1,5 +1,5 @@
 {
     "name": "yxml",
-    "description": "WIP XML parsing library",
+    "description": "XML parsing library, nothrow @nogc, XML subset. Port of yxml.",
     "license": "MIT"
 }
