@@ -29,21 +29,16 @@ import core.stdc.string: memset, strlen;
 
 nothrow @nogc:
 
-// Current requirements:
-// - [ ] one file (TODO: depend on numem again)
-// - [x] simplified DOM API, this is only useful to parse a simplified subset of XML.
-//       (no comments, no text nodes, no Processing Instructions => only Element exists)
-// - [x] either depends upon numem, or no-dependency
-// - [x] @nogc nothrow no-exc
-// - [ ] easy to parse things
-
 public
 {
     /// XML parser object.
     /// This is only a DOM-lite, do not expect any type of conformance.
+    /// In particular, there is only one type of Node in this tree: the XmlElement.
     struct XmlDocument
     {
     nothrow @nogc:
+
+        alias _root this;
 
         /// Clears DOM-lite, parse XML source.
         /// Returns: `true` on success.
@@ -158,6 +153,7 @@ public
             return _errorStr;
         }
 
+        /// Gets the root of the document tree.
         XmlElement root()
         {
             return _root.get();
