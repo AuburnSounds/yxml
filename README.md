@@ -17,7 +17,14 @@ Not all of XML is supported. The limitations are stronger than the original [yxm
 - Can't parse HTML.
 - Can't _emit_ XML.
 - Not validating, no namespace support.
-- Resulting DOM has only `Element` nodes, no `Text` nodes.
+- Resulting DOM has only `Element` nodes, no `Text` nodes. 
+  This means all those snippets are similar after parsing:
+  ```xml
+  <li>No preserve of <p>lol</p>the shape</li>
+  <li><p>lol</p>No preserve of the shape</li>
+  <li>No preserve of the shape<p>lol</p></li>
+  ```
+  This might be unlike what you would expect for a XML parser.
 
 
 ## Usage

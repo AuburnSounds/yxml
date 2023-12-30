@@ -1726,3 +1726,16 @@ nothrow @nogc unittest
     assert(root.tagName == "root");
     assert(root.childNodes.length == 3);
 }
+
+// Important: DOM is simplified, with all text content order flattened.
+nothrow @nogc unittest 
+{
+    XmlDocument doc;
+    doc.parse("<html>No preserve of the shape<p>lol</p></html>");
+    assert(!doc.isError);
+    assert(doc.root.textContent == "No preserve of the shape");
+
+    doc.parse("<html>No preserve of <p>lol</p>the shape</html>");
+    assert(!doc.isError);
+    assert(doc.root.textContent == "No preserve of the shape");
+}
