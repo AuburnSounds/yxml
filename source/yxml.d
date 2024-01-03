@@ -29,11 +29,14 @@ import core.stdc.string: memset, strlen;
 
 nothrow @nogc:
 
+// TODO: need .innerHTML for Markdown rendering
+
 public
 {
     /// XML parser object.
     /// This is only a DOM-lite, do not expect any type of conformance.
     /// In particular, there is only one type of Node in this tree: the XmlElement.
+    /// This is also a sort of 'context' for the DOM tree.
     struct XmlDocument
     {
     nothrow @nogc:
@@ -61,6 +64,7 @@ public
             // weak pointer to currently create element.
             // It has been added to its parent already.
             XmlElement current = null;
+            XmlText currentText = null;
             XmlAttr currentAttr = null;
 
             for (size_t n = 0; n < source.length; ++n)
@@ -82,7 +86,7 @@ public
                         case YXML_ELEMSTART:
                             if (current is null)
                             {
-                                _root = unique_new!XmlElement(parser.elem, null);
+                                _root = unique_new!XmlElement(null, parser.elem);
                                 current = _root.get();
                             }
                             else
@@ -90,17 +94,26 @@ public
                                 // Append a child to current Element, which becomes the new current
                                 XmlElement parent = current;
                                 assert(parent !is null);
-                                parent._children ~= unique_new!XmlElement(parser.elem, parent);
-                                current = parent._children[$-1].get;
+                                XmlElement here = nogc_new!XmlElement(parent, parser.elem);
+                                parent._children ~= here;
+                                current = here;
                             }
                             break;
                             
                         case YXML_CONTENT:
-                            current._content.appendCString(parser.data.ptr);
+                            if (currentText is null)
+                            {
+                                // Append text node to current Element, point to it
+                                XmlElement parent = current;
+                                XmlText here = nogc_new!XmlText(parent);
+                                parent._children ~= here;
+                                currentText = here;
+                            }
+                            currentText._data.appendCString(parser.data.ptr);
                             break;
 
                         case YXML_ELEMEND:
-                            current = current.parentNode();
+                            current = current.parentElement();
                             break;
 
                         case YXML_ATTRSTART:
@@ -197,87 +210,77 @@ public
         }
     }
 
-    final class XmlElement
+    enum XmlNodeType
+    {
+        element,
+        text
+    }
+
+    /// Base class of DOM node.
+    class XmlNode
     {
     public:
     nothrow:
     @nogc:
 
-        // Constructs an Element-like object, with a tag name,
-        // an optional parent (weak pointer), and owned children 
-        // null = no parent
-        this(const(char)* elemNameZ, XmlElement parent)
+        this(XmlNodeType type, XmlNode parent)
         {
-            _tagName.appendCString(elemNameZ);
+            _type = type;
             _parent = parent;
         }
 
-        /// Returns: tag name.
-        const(char)[] tagName()
-        {
-            return _tagName.toDString();
-        }
-
-        // Warning: this is not the same as DOM's innerText!
-        // No sub-node text content is reported, just this node.
-        const(char)[] content()
-        {
-            return _content.toDString();
-        }
-        alias textContent = content;
-
-        /// Returns: parent, if any. If none, this is the document root.
-        XmlElement parentNode()
-        {
-            return _parent;
-        }
-
         /// Number of children.
-        size_t childElementCount()
+        final size_t childElementCount()
         {
             return _children.size;
         }
 
         /// `childNodes` returns a foreach-able range of child nodes of the given Element where 
         /// the first child node is assigned index 0.
-        auto childNodes()
+        final auto childNodes()
         {
             return ChildRange(this, 0, childElementCount());
         }
-        ///ditto
-        alias children = childNodes; // same because in our API, only Element is considered.
+
+        /// Returns: parent, if any. If none, this is the document root, which is not represented.
+        final XmlNode parentNode()
+        {
+            return _parent;
+        }
+
+        /// Returns: parent, if it's an Element.
+        final XmlElement parentElement()
+        {
+            return cast(XmlElement) _parent;
+        }
 
         /// `firstChild` returns a borrowed reference to the first child in the node.
         /// Returns: First child, or `null` if no child.
-        XmlElement firstChild()
+        final XmlNode firstChild()
         {
             if (_children.size == 0)
                 return null;
-            return _children[0].get();
+            return _children[0];
         }
-        ///ditto
-        alias firstElementChild = firstChild;
 
         /// `lastChild` returns a borrowed reference to the last child of the node.
         /// Returns: Last child, or `null` if no child.
-        XmlElement lastChild()
+        final XmlNode lastChild()
         {
             if (_children.size == 0)
                 return null;
-            return _children[$-1].get();
+            return _children[$-1];
         }
-        ///ditto
-        alias lastElementChild = lastChild;
 
         /// Return next sibling in parent's children, or null if last child.
-        XmlElement nextSibling()
+        final XmlNode nextSibling()
         {
             if (_parent is null)
                 return null;
             auto iter = _parent.childNodes;
             size_t numChildren = iter.length;
             size_t n = 0;
-            foreach(XmlElement node; iter)
+            foreach(XmlNode node; iter)
             {
                 if (node is this)
                 {
@@ -289,8 +292,172 @@ public
             }
             assert(false);
         }
-        ///ditto
-        alias nextElementSibling = nextSibling;
+
+        /// "The textContent property of the Node interface represents the text content of the node
+        /// and its descendants.
+        final const(char)[] textContent()
+        {
+            _content.clear();
+            appendTextContent(_content);
+            return _content.toDString();
+        }
+
+    protected:
+        abstract void appendTextContent(ref nstring outbuf);
+
+        // Allows to define range-types more easily.
+        mixin template NodeRangeTemplate(OutNodeType, bool Recursive = false)
+        {
+        public:
+        nothrow:
+        @nogc:
+            XmlNode root;
+
+            // Current position
+            XmlNode elem;
+            size_t start, stop;
+
+            bool empty()
+            { 
+                return !progressUntilMatch();
+            }
+
+            OutNodeType front() 
+            { 
+                return cast(OutNodeType) elem._children[start]; 
+            }
+
+            void popFront()
+            { 
+                start += 1;
+                progressUntilMatch();
+            }
+
+            // return true on match
+            private bool progressUntilMatch()
+            {
+                while(start < stop)
+                {
+                    if (match(elem._children[start]))
+                        return true;
+
+                    start += 1;
+                }
+                // TODO: recursive
+                return false; // no match found
+            }
+        }
+
+    private:
+
+        // Node type
+        XmlNodeType _type;
+
+        // Link to parent, root has _parent == null.
+        XmlNode _parent = null;
+
+        // Owned children.
+        vector!XmlNode _children;
+
+        // Cached content string. Computed on request.
+        nstring _content;
+
+        static struct ChildRange
+        {
+            nothrow @nogc:
+
+            XmlNode elem;
+            size_t start, stop;
+            bool empty()       { return stop <= start; }
+            void popFront()    { start++; }
+            void popBack()     { stop--; }
+            size_t length()    { return stop - start; }
+            XmlNode front()    { return elem._children[start]; }
+            XmlNode opIndex(size_t index) { return elem._children[start + index]; }
+        }       
+    }
+
+    /// CharacterData interface represents a Node object that contains characters.
+    class XmlCharacterData : XmlNode
+    {
+    public:
+    nothrow:
+    @nogc:
+        this(XmlNodeType type, XmlNode parent)
+        {
+            super(type, parent);
+        }
+
+        const(char)[] data()
+        {
+            return _data.toDString();
+        }
+
+        size_t length()
+        {
+            return _data.length();
+        }
+
+    protected:
+
+        override void appendTextContent(ref nstring outbuf)
+        {
+            outbuf ~= _data.toDString();
+        }
+
+    private:
+        nstring _data;
+
+    }
+
+    final class XmlText : XmlCharacterData
+    {
+    public:
+    nothrow:
+    @nogc:
+        this(XmlNode parent)
+        {
+            super(XmlNodeType.text, parent);
+        }
+    }
+
+    final class XmlElement : XmlNode
+    {
+    public:
+    nothrow:
+    @nogc:
+
+        // Constructs an Element-like object, with a tag name,
+        // an optional parent (weak pointer), and owned children 
+        // null = no parent
+        this(XmlNode parent, const(char)* elemNameZ)
+        {
+            super(XmlNodeType.element, parent);
+            _tagName.appendCString(elemNameZ);
+        }
+
+        /// Returns: tag name.
+        const(char)[] tagName()
+        {
+            return _tagName.toDString();
+        }
+
+        /// `children` returns a foreach-able range of XmlElement nodes of the given XmlElement.
+        /// To get all child nodes, including non-element nodes like text, use XmlNode.childNodes.
+        final auto children()
+        {
+            return ChildRange(this, 0, childElementCount());
+        }
+
+        alias children = childNodes; // same because in our API, only Element is considered.
+
+
+
+        ///TODO firstElementChild
+
+
+        ///TODO lastElementChild
+        ///TODO nextElementSibling
 
         // <ATTRIBUTES>
 
@@ -323,12 +490,18 @@ public
 
         // </ATTRIBUTES>
 
-
         /// Iterate children by tag name.
         auto getChildrenByTagName(const(char)[] name)
         {
-            return TagNameChildRange(this, 0, childElementCount(), name);
+            return TagNameChildRange!false(this, this, 0, childElementCount(), name);
         }
+
+        /// Iterate children recursively by tag name.
+        /*auto getElementsByTagName(const(char)[] name)
+        {
+            // same but recursive
+            return TagNameChildRange!true(this, this, 0, childElementCount(), name);
+        }*/
 
         /// Firt child with a given tag name, or `null` if doesn't exist.
         XmlElement firstChildByTagName(const(char)[] name)
@@ -346,35 +519,21 @@ public
             return firstChildByTagName(name) !is null;
         }
 
+    protected:
+        override void appendTextContent(ref nstring outbuf)
+        {
+            for (int n = 0; n < _children.size; ++n)
+            {
+                _children[n].appendTextContent(outbuf);
+            }
+        }
+
     private:
         // Tag name eg: <html> => "html"
         nstring _tagName;
         
-        // Content of tag.
-        nstring _content;
-        
-        // Link to parent, root has _parent == null.
-        XmlElement _parent = null;
-
-        // Owned children.
-        vector!(unique_ptr!XmlElement) _children;
-
         // Owned attributes.
         vector!(unique_ptr!XmlAttr) _attributes;
-
-        static struct ChildRange
-        {
-        nothrow @nogc:
-            
-            XmlElement elem;
-            size_t start, stop;
-            bool empty()       { return stop <= start; }
-            void popFront()    { start++; }
-            void popBack()     { stop--; }
-            size_t length()    { return stop - start; }
-            XmlElement front() { return elem._children[start].get(); }
-            XmlElement opIndex(size_t index) { return elem._children[start + index].get(); }
-        }
 
         static struct AttributeRange
         {
@@ -389,43 +548,16 @@ public
             XmlAttr opIndex(size_t index) { return elem._attributes[start + index].get(); }
         }
 
-        static struct TagNameChildRange
+        static struct TagNameChildRange(bool Recursive)
         {
         nothrow @nogc:
-
-            XmlElement elem;
-            size_t start, stop;
+            mixin NodeRangeTemplate!(XmlElement, Recursive);
             const(char)[] nameSearched;
 
-            bool empty()
-            { 
-                return !progressUntilMatch();
-            }
-
-            void popFront()
-            { 
-                const(char)[] s = nameSearched;
-                start += 1;
-                progressUntilMatch();
-            }
-            XmlElement front() { return elem._children[start].get(); }
-
-            private bool match(XmlElement candidate)
+            private bool match(XmlNode candidate)
             {
-                return candidate.tagName() == nameSearched;
-            }
-
-            // return true on match
-            private bool progressUntilMatch()
-            {
-                while(start < stop)
-                {
-                    if (match(elem._children[start].get))
-                        return true;
-
-                    start += 1;
-                }
-                return false; // no match found
+                XmlElement elem = cast(XmlElement) candidate;
+                return elem !is null && elem.tagName() == nameSearched;
             }
         }
     }
@@ -1720,22 +1852,29 @@ nothrow @nogc unittest
 {
     XmlDocument doc;
     assert(doc.isError);
-    doc.parse(`<?xml version="1.0" encoding="UTF-8" ?><root><test /><test/><test></test></root>`);
+    doc.parse(`<?xml version="1.0" encoding="UTF-8" ?><root><test /><test/><test><inner></inner></test></root>`);
     assert(!doc.isError);
     XmlElement root = doc.root;
     assert(root.tagName == "root");
     assert(root.childNodes.length == 3);
+
+    // check recursive search
+    /*auto r = root.getElementsByTagName("inner");
+    assert(!r.empty);
+    r.popFront;
+    assert(r.empty);*/
 }
 
 // Important: DOM is simplified, with all text content order flattened.
 nothrow @nogc unittest 
 {
     XmlDocument doc;
-    doc.parse("<html>No preserve of the shape<p>lol</p></html>");
+    doc.parse("<html>This is text <p>lol</p>content</html>");
     assert(!doc.isError);
-    assert(doc.root.textContent == "No preserve of the shape");
+    assert(doc.root.textContent == "This is text lolcontent");
 
-    doc.parse("<html>No preserve of <p>lol</p>the shape</html>");
-    assert(!doc.isError);
-    assert(doc.root.textContent == "No preserve of the shape");
+// TODO
+//    doc.parse("<html>This is innerHTML<p> with </p>space normalization</html>");
+//    assert(!doc.isError);
+//    assert(doc.root.innerHTML == "This is innerHTML <p>with</p> space normalization");
 }
