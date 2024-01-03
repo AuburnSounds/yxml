@@ -29,8 +29,6 @@ import core.stdc.string: memset, strlen;
 
 nothrow @nogc:
 
-// TODO: need .innerHTML for Markdown rendering
-
 public
 {
     /// XML parser object.
@@ -128,7 +126,6 @@ public
                             break;
 
                         case YXML_ATTREND:
-                            // TODO
                             break;
 
                         case YXML_PISTART:
@@ -253,7 +250,10 @@ public
         /// Returns: parent, if it's an Element.
         final XmlElement parentElement()
         {
-            return cast(XmlElement) _parent;
+            if ((_parent !is null) && (_parent._type == XmlNodeType.element))
+                return unsafeObjectCast!XmlElement(_parent);
+            else
+                return null;
         }
 
         /// `firstChild` returns a borrowed reference to the first child in the node.
@@ -306,6 +306,7 @@ public
 
     protected:
         abstract void appendTextContent(ref nstring outbuf);
+        abstract void appendInnerHTML(ref nstring outbuf);
 
         // Allows to define range-types more easily.
         mixin template NodeRangeTemplate(OutNodeType, bool Recursive = false)
@@ -324,9 +325,10 @@ public
                 return !progressUntilMatch();
             }
 
+            // Note: match() MUST ensure the selected node has right type.
             OutNodeType front() 
             { 
-                return cast(OutNodeType) elem._children[start]; 
+                return unsafeObjectCast!OutNodeType(elem._children[start]); 
             }
 
             void popFront()
@@ -407,6 +409,11 @@ public
             outbuf ~= _data.toDString();
         }
 
+        override void appendInnerHTML(ref nstring outbuf)
+        {
+            outbuf ~= _data.toDString();
+        }
+
     private:
         nstring _data;
 
@@ -451,9 +458,13 @@ public
             return ChildRange(this, 0, childElementCount());
         }
 
-        alias children = childNodes; // same because in our API, only Element is considered.
-
-
+        /// Gets the XML markup contained within the element.
+        const(char)[] innerHTML()
+        {
+            _innerHTMLStr.clear();
+            appendInnerHTML(_innerHTMLStr);
+            return _innerHTMLStr.toDString();
+        }
 
         ///TODO firstElementChild
 
@@ -467,6 +478,12 @@ public
         auto attributes()
         {
             return AttributeRange(this, 0, _attributes.size());
+        }
+
+        /// Returns a boolean value indicating whether the element has any attributes or not.
+        bool hasAttributes()
+        {
+            return _attributes.size() != 0;
         }
 
         /// Returns borrowed reference to an attribute, as an XmlAttr node.
@@ -530,12 +547,49 @@ public
             }
         }
 
+        override void appendInnerHTML(ref nstring outbuf)
+        {
+            // FUTURE: probably some escaping to do in case of non-XML strings
+
+            for (int n = 0; n < _children.size; ++n)
+            {
+                XmlNode node = _children[n];                
+                if (node._type == XmlNodeType.element)
+                {
+                    XmlElement e = unsafeObjectCast!XmlElement(node);
+                    outbuf ~= "<";
+                    outbuf ~= e.tagName; // must be valid, else XML wouldn't have parsed
+
+                    foreach(XmlAttr attr; e.attributes())
+                    {
+                        outbuf ~= " ";
+                        outbuf ~= attr.name(); // same remark
+                        outbuf ~= "=\"";
+                        outbuf ~= attr.value(); // same remark
+                        outbuf ~= "\"";
+                    }
+                    outbuf ~= ">";
+                    e.appendInnerHTML(outbuf);
+                    outbuf ~= "</";
+                    outbuf ~= e.tagName;
+                    outbuf ~= ">";
+                }
+                else
+                {
+                    node.appendInnerHTML(outbuf);
+                }                
+            }
+        }
+
     private:
         // Tag name eg: <html> => "html"
         nstring _tagName;
         
         // Owned attributes.
         vector!(unique_ptr!XmlAttr) _attributes;
+
+        // Cached value for .innerHTML
+        nstring _innerHTMLStr;
 
         static struct AttributeRange
         {
@@ -558,7 +612,9 @@ public
 
             private bool match(XmlNode candidate)
             {
-                XmlElement elem = cast(XmlElement) candidate;
+                if (candidate._type != XmlNodeType.element)
+                    return false;
+                XmlElement elem = unsafeObjectCast!XmlElement(candidate);
                 return elem !is null && elem.tagName() == nameSearched;
             }
         }
@@ -608,6 +664,12 @@ void appendCString(ref nstring str, const(char)* source)
 {
     str ~= source[0..strlen(source)];
 }
+
+T unsafeObjectCast(T)(Object obj)
+{
+    return cast(T)(cast(void*)(obj));
+}
+
 
 //
 // <PARSER STARTS HERE>
@@ -1867,18 +1929,40 @@ nothrow @nogc unittest
     assert(r.empty);*/
 }
 
-// Important: DOM is simplified, with all text content order flattened.
+// .textContent
 nothrow @nogc unittest 
 {
     XmlDocument doc;
     doc.parse("<html>This is text <p>lol</p>content</html>");
     assert(!doc.isError);
     assert(doc.root.textContent == "This is text lolcontent");
+}
 
-// TODO
-//    doc.parse("<html>This is innerHTML<p> with </p>space normalization</html>");
-//    assert(!doc.isError);
-//    assert(doc.root.innerHTML == "This is innerHTML <p>with</p> space normalization");
+// attributes
+nothrow @nogc unittest 
+{
+    XmlDocument doc;
+    doc.parse(`<stuff major="lol">hey</stuff>`);
+    assert(!doc.isError);
+    XmlElement e = doc.root;
+    assert(e.tagName == "stuff");
+    assert(e.hasAttributes());
+    XmlAttr attr = e.getAttributeNode("major");
+    assert(attr !is null);
+    assert(e.getAttributeNode("non-existing") is null);
+    auto r = e.attributes;
+    assert(r.length == 1);
+    assert(r.front().name() == "major");
+    assert(r.front().value() == "lol");
+}
+
+// .innerHTML
+nothrow @nogc unittest 
+{
+    XmlDocument doc;
+    doc.parse("<html>This is innerHTML <b id=\"lol\">get</b> property</html>");
+    assert(!doc.isError);
+    assert(doc.root.innerHTML == "This is innerHTML <b id=\"lol\">get</b> property");
 }
 
 nothrow @nogc unittest 
