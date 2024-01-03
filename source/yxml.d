@@ -91,6 +91,7 @@ public
                             }
                             else
                             {
+                                currentText = null;
                                 // Append a child to current Element, which becomes the new current
                                 XmlElement parent = current;
                                 assert(parent !is null);
@@ -114,6 +115,7 @@ public
 
                         case YXML_ELEMEND:
                             current = current.parentElement();
+                            currentText = null;
                             break;
 
                         case YXML_ATTRSTART:
@@ -1877,4 +1879,17 @@ nothrow @nogc unittest
 //    doc.parse("<html>This is innerHTML<p> with </p>space normalization</html>");
 //    assert(!doc.isError);
 //    assert(doc.root.innerHTML == "This is innerHTML <p>with</p> space normalization");
+}
+
+nothrow @nogc unittest 
+{
+    XmlDocument doc;
+    doc.parse("<html><a> ah </a><b>oh</b></html>");
+    assert(!doc.isError);
+    XmlElement a = doc.root.firstChildByTagName("a");
+    XmlElement b = doc.root.firstChildByTagName("b");
+    assert(a !is null);
+    assert(b !is null);
+    assert(a.textContent == " ah ");
+    assert(b.textContent == "oh");
 }
