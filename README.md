@@ -22,8 +22,17 @@ Not all of XML is supported. The limitations are stronger than the original [yxm
 ## Usage
 
 
-### 📈 Parsing a file under `nothrow @nogc` constraint
+### 📈 Parsing a single value in a file
 ```d
+// EXAMPLE: the file has this shape.
+// ------------------------------------------------
+// <?xml version="1.0" encoding="UTF-8"?>
+// <results>
+//    <metric value="5.8" />
+// </results>
+// ------------------------------------------------
+// Note: This example assumes you can use the GC for error reporting,
+// but `yxml` doesn't strictly require it.
 void parseMyXMLData(const(char)[] xmlData) 
 {
     import yxml;
@@ -37,11 +46,22 @@ void parseMyXMLData(const(char)[] xmlData)
     {
         const(char)[] message = doc.errorMessage;
         // ...do something with the error, 
-        // such as throwing if you can
+        // such as throwing if you can:
+        throw new Exception(message.idup);
     }
-        
-    XmlElement root = doc.root;    
-    // ...access DOM here...
+
+    XmlElement root = doc.root;
+
+    if (root.tagName != "results")
+        throw new Exception("expected <results> as root XML anchor");
+
+    foreach(e; root.getChildrenByTagName("metric"))
+    {
+        if (!e.hasAttribute("value"))
+            throw new Exception(`expected attribute "value" in <metric>`);
+        return to!double(e.getAttribute("value")); // return first seen
+    }
+    throw new Exception("expected <metric>");
 }
 ```
 

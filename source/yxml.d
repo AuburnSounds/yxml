@@ -45,7 +45,7 @@ public
         /// Returns: `true` on success.
         bool parse(const(char)[] source)
         {
-            clearError();     
+            clearError();
 
             // Lazily allocate memory for parsing.
             allocateParser();
@@ -484,6 +484,12 @@ public
         bool hasAttributes()
         {
             return _attributes.size() != 0;
+        }
+
+        /// Returns a boolean value indicating whether the element has a particular attribute.
+        bool hasAttribute(const(char)[] attrName)
+        {
+            return getAttributeNode(attrName) !is null;
         }
 
         /// Returns borrowed reference to an attribute, as an XmlAttr node.
@@ -1976,4 +1982,35 @@ nothrow @nogc unittest
     assert(b !is null);
     assert(a.textContent == " ah ");
     assert(b.textContent == "oh");
+}
+
+// TODO: Test using doc instead of doc.root for `XmlElement` calls.
+nothrow @nogc unittest
+{
+    import std.conv;
+    import std.stdio;
+
+    const(char)[] parseMyXMLData(const(char)[] xmlData) nothrow @nogc
+    {
+        // Parse a whole XML file, builds a DOM.
+        XmlDocument doc;
+        doc.parse(xmlData);
+
+        assert(!doc.isError);
+
+        XmlElement root = doc.root;
+
+        if (root.tagName != "results")
+            assert(false);
+
+        foreach(e; root.getChildrenByTagName("metric"))
+        {
+            if (!e.hasAttribute("value"))
+                assert(false);
+            return e.getAttribute("value");
+        }
+        assert(false);
+    }
+
+    assert("5.8" == parseMyXMLData(`<?xml version="1.0" encoding="UTF-8"?><results><metric value="5.8" /></results>`));    
 }
