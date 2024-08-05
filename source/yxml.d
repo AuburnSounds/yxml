@@ -378,7 +378,37 @@ public
             size_t length()    { return stop - start; }
             XmlNode front()    { return elem._children[start]; }
             XmlNode opIndex(size_t index) { return elem._children[start + index]; }
-        }       
+        }
+
+        static struct ElementRange
+        {
+        nothrow @nogc:
+            XmlElement elem;
+            size_t start, stop; // start == -1 means "need to find first XmlElement"
+            bool empty()       { init(); return stop <= start; }
+            void popFront()    { start++; skipNonElement(); }
+            size_t length()    { return stop - start; }
+            XmlElement front() { XmlElement r = cast(XmlElement)elem._children[start]; assert(r); return r; }
+
+        private:
+            void init()
+            {
+                if (start == -1)
+                {
+                    start = 0;
+                    skipNonElement();
+                }
+            }
+            void skipNonElement()
+            {
+                while(start < stop)
+                {
+                    if (cast(XmlElement)(elem._children[start]) !is null)
+                        break;
+                    start++;
+                }
+            }
+        }
     }
 
     /// CharacterData interface represents a Node object that contains characters.
@@ -455,7 +485,7 @@ public
         /// To get all child nodes, including non-element nodes like text, use XmlNode.childNodes.
         final auto children()
         {
-            return ChildRange(this, 0, childElementCount());
+            return ElementRange(this, -1, childElementCount());
         }
 
         /// Gets the XML markup contained within the element.
