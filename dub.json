@@ -4,6 +4,6 @@
     "license": "MIT",
     "dependencies":
     {
-        "numem": "~>0.5"
+        "numem": "~>0.21"
     }
 }
