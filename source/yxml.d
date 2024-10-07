@@ -361,7 +361,7 @@ public
         XmlNode _parent = null;
 
         // Owned children.
-        vector!XmlNode _children;
+        weak_vector!XmlNode _children;
 
         // Cached content string. Computed on request.
         nstring _content;
@@ -622,7 +622,7 @@ public
         nstring _tagName;
         
         // Owned attributes.
-        vector!(unique_ptr!XmlAttr) _attributes;
+        weak_vector!(unique_ptr!XmlAttr) _attributes;
 
         // Cached value for .innerHTML
         nstring _innerHTMLStr;
