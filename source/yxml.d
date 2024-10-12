@@ -613,7 +613,7 @@ public
                 else
                 {
                     node.appendInnerHTML(outbuf);
-                }                
+                }
             }
         }
 
@@ -622,6 +622,7 @@ public
         nstring _tagName;
         
         // Owned attributes.
+        // TODO: all this leaks
         weak_vector!(unique_ptr!XmlAttr) _attributes;
 
         // Cached value for .innerHTML

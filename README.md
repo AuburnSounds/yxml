@@ -125,16 +125,43 @@ void parseSupportDeskFile(XmlElement parent)
 
 ### 📈 Get a single attribute
 
+All these 3 examples are equivalent:
 ```d
 void parseCustomers(XmlElement node)
 {
     // null if such an attribute doesn't exist
     const(char)[] blurb = node.getAttribute("blurb");
-    if (blurb is null)
-        throw new Exception(`no "blurb" attribute!`);  
+    if (!blurb)
+        throw new Exception(`no "blurb" attribute!`);
 }
 ```
+
 ```d
-// TODO iterate on attribute nodes
-// TODO atribute name() and value()
+void parseCustomers(XmlElement node)
+{
+    const(char)[] blurb = null;
+    if (node.hasAttribute("blurb"))
+    {
+        XmlAttr attr = node.getAttributeNode("blurb");
+        blurb = attr.value();
+    }
+    if (!blurb)
+        throw new Exception(`no "blurb" attribute!`);
+}
+```
+
+```d
+void parseCustomers(XmlElement node)
+{
+    const(char)[] blurb = null;
+
+    // Iterate on all attributes
+    foreach(attr; node.attributes())
+    {
+        if (attr.name == "blurb")
+            blurb = attr.value;
+    }
+    if (!blurb)
+        throw new Exception(`no "blurb" attribute!`);
+}
 ```
