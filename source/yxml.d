@@ -241,7 +241,7 @@ public
         /// Number of children.
         final size_t childElementCount()
         {
-            return _children.size;
+            return _children.length;
         }
 
         /// `childNodes` returns a foreach-able range of child nodes of the given Element where 
@@ -270,7 +270,7 @@ public
         /// Returns: First child, or `null` if no child.
         final XmlNode firstChild()
         {
-            if (_children.size == 0)
+            if (_children.length == 0)
                 return null;
             return _children[0];
         }
@@ -279,7 +279,7 @@ public
         /// Returns: Last child, or `null` if no child.
         final XmlNode lastChild()
         {
-            if (_children.size == 0)
+            if (_children.length == 0)
                 return null;
             return _children[$-1];
         }
@@ -517,13 +517,13 @@ public
         /// `attributes` returns a foreach-able range of attributes.
         auto attributes()
         {
-            return AttributeRange(this, 0, _attributes.size());
+            return AttributeRange(this, 0, _attributes.length);
         }
 
         /// Returns a boolean value indicating whether the element has any attributes or not.
         bool hasAttributes()
         {
-            return _attributes.size() != 0;
+            return _attributes.length != 0;
         }
 
         /// Returns a boolean value indicating whether the element has a particular attribute.
@@ -587,7 +587,7 @@ public
     protected:
         override void appendTextContent(ref Vec!char outbuf)
         {
-            for (int n = 0; n < _children.size; ++n)
+            for (int n = 0; n < _children.length; ++n)
             {
                 _children[n].appendTextContent(outbuf);
             }
@@ -597,7 +597,7 @@ public
         {
             // FUTURE: probably some escaping to do in case of non-XML strings
 
-            for (int n = 0; n < _children.size; ++n)
+            for (int n = 0; n < _children.length; ++n)
             {
                 XmlNode node = _children[n];                
                 if (node._type == XmlNodeType.element)
