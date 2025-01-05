@@ -22,8 +22,8 @@
 */
 module yxml;
 
-import numem.all;
-
+import dplug.core.nogc;
+import dplug.core.vec;
 import core.stdc.stdlib: malloc, free;
 import core.stdc.string: memset, strlen;
 
@@ -84,8 +84,8 @@ public
                         case YXML_ELEMSTART:
                             if (current is null)
                             {
-                                _root = unique_new!XmlElement(null, parser.elem);
-                                current = _root.get();
+                                _root = mallocNew!XmlElement(null, parser.elem);
+                                current = _root;
                             }
                             else
                             {
@@ -93,7 +93,7 @@ public
                                 // Append a child to current Element, which becomes the new current
                                 XmlElement parent = current;
                                 assert(parent !is null);
-                                XmlElement here = nogc_new!XmlElement(parent, parser.elem);
+                                XmlElement here = mallocNew!XmlElement(parent, parser.elem);
                                 parent._children ~= here;
                                 current = here;
                             }
@@ -104,7 +104,7 @@ public
                             {
                                 // Append text node to current Element, point to it
                                 XmlElement parent = current;
-                                XmlText here = nogc_new!XmlText(parent);
+                                XmlText here = mallocNew!XmlText(parent);
                                 parent._children ~= here;
                                 currentText = here;
                             }
@@ -117,8 +117,8 @@ public
                             break;
 
                         case YXML_ATTRSTART:
-                            current._attributes ~= unique_new!XmlAttr(parser.attr, current);
-                            currentAttr = current._attributes[$-1].get;
+                            current._attributes ~= mallocNew!XmlAttr(parser.attr, current);
+                            currentAttr = current._attributes[$-1];
                             break;
 
                         case YXML_ATTRVAL:
@@ -168,18 +168,19 @@ public
         /// Gets the root of the document tree.
         XmlElement root()
         {
-            return _root.get();
+            return _root;
         }
 
         ~this()
         {
             setError("uninitialized");
             free(_mergedAlloc);
+            destroyFree(_root);
         }
 
     private:
 
-        unique_ptr!XmlElement _root;
+        XmlElement _root;
 
         const(char)[] _errorStr = "uninitialized";
 
@@ -191,7 +192,8 @@ public
         void setError(const(char)[] message)
         {
             _errorStr = message;
-            _root.reset();
+            destroyFree(_root);
+            _root = null;
         }
 
         // Recommended by yxml's documentation, one single allocation.
@@ -226,6 +228,14 @@ public
         {
             _type = type;
             _parent = parent;
+        }
+
+        ~this()
+        {
+            foreach_reverse(c; _children)
+            {
+                destroyFree(c);
+            }
         }
 
         /// Number of children.
@@ -299,14 +309,14 @@ public
         /// and its descendants.
         final const(char)[] textContent()
         {
-            _content.clear();
+            _content.clearContents();
             appendTextContent(_content);
-            return _content.toDString();
+            return _content[];
         }
 
     protected:
-        abstract void appendTextContent(ref nstring outbuf);
-        abstract void appendInnerHTML(ref nstring outbuf);
+        abstract void appendTextContent(ref Vec!char outbuf);
+        abstract void appendInnerHTML(ref Vec!char outbuf);
 
         // Allows to define range-types more easily.
         mixin template NodeRangeTemplate(OutNodeType, bool Recursive = false)
@@ -361,10 +371,10 @@ public
         XmlNode _parent = null;
 
         // Owned children.
-        weak_vector!XmlNode _children;
+        Vec!XmlNode _children;
 
         // Cached content string. Computed on request.
-        nstring _content;
+        Vec!char _content;
 
         static struct ChildRange
         {
@@ -424,7 +434,7 @@ public
 
         const(char)[] data()
         {
-            return _data.toDString();
+            return _data[];
         }
 
         size_t length()
@@ -434,18 +444,18 @@ public
 
     protected:
 
-        override void appendTextContent(ref nstring outbuf)
+        override void appendTextContent(ref Vec!char outbuf)
         {
-            outbuf ~= _data.toDString();
+            outbuf.pushBack(_data);
         }
 
-        override void appendInnerHTML(ref nstring outbuf)
+        override void appendInnerHTML(ref Vec!char outbuf)
         {
-            outbuf ~= _data.toDString();
+            outbuf.pushBack(_data);
         }
 
     private:
-        nstring _data;
+        Vec!char _data;
 
     }
 
@@ -478,7 +488,7 @@ public
         /// Returns: tag name.
         const(char)[] tagName()
         {
-            return _tagName.toDString();
+            return _tagName[];
         }
 
         /// `children` returns a foreach-able range of XmlElement nodes of the given XmlElement.
@@ -491,9 +501,9 @@ public
         /// Gets the XML markup contained within the element.
         const(char)[] innerHTML()
         {
-            _innerHTMLStr.clear();
+            _innerHTMLStr.clearContents();
             appendInnerHTML(_innerHTMLStr);
-            return _innerHTMLStr.toDString();
+            return _innerHTMLStr[];
         }
 
         ///TODO firstElementChild
@@ -575,7 +585,7 @@ public
         }
 
     protected:
-        override void appendTextContent(ref nstring outbuf)
+        override void appendTextContent(ref Vec!char outbuf)
         {
             for (int n = 0; n < _children.size; ++n)
             {
@@ -583,7 +593,7 @@ public
             }
         }
 
-        override void appendInnerHTML(ref nstring outbuf)
+        override void appendInnerHTML(ref Vec!char outbuf)
         {
             // FUTURE: probably some escaping to do in case of non-XML strings
 
@@ -593,22 +603,24 @@ public
                 if (node._type == XmlNodeType.element)
                 {
                     XmlElement e = unsafeObjectCast!XmlElement(node);
-                    outbuf ~= "<";
-                    outbuf ~= e.tagName; // must be valid, else XML wouldn't have parsed
+                    outbuf.pushBack('<');
+                    outbuf.pushBack(e._tagName); // must be valid, else XML wouldn't have parsed
 
                     foreach(XmlAttr attr; e.attributes())
                     {
-                        outbuf ~= " ";
-                        outbuf ~= attr.name(); // same remark
-                        outbuf ~= "=\"";
-                        outbuf ~= attr.value(); // same remark
-                        outbuf ~= "\"";
+                        outbuf.pushBack(' ');
+                        outbuf.pushBack(attr._name); // same remark
+                        outbuf.pushBack('=');
+                        outbuf.pushBack('\"');
+                        outbuf.pushBack(attr._value); // same remark
+                        outbuf.pushBack('\"');
                     }
-                    outbuf ~= ">";
+                    outbuf.pushBack('>');
                     e.appendInnerHTML(outbuf);
-                    outbuf ~= "</";
-                    outbuf ~= e.tagName;
-                    outbuf ~= ">";
+                    outbuf.pushBack('<');
+                    outbuf.pushBack('/');
+                    outbuf.pushBack(e._tagName);
+                    outbuf.pushBack('>');
                 }
                 else
                 {
@@ -619,14 +631,13 @@ public
 
     private:
         // Tag name eg: <html> => "html"
-        nstring _tagName;
+        Vec!char _tagName;
         
         // Owned attributes.
-        // TODO: all this leaks
-        weak_vector!(unique_ptr!XmlAttr) _attributes;
+        Vec!XmlAttr _attributes;
 
         // Cached value for .innerHTML
-        nstring _innerHTMLStr;
+        Vec!char _innerHTMLStr;
 
         static struct AttributeRange
         {
@@ -637,8 +648,8 @@ public
             void popFront()    { start++; }
             void popBack()     { stop--; }
             size_t length()    { return stop - start; }
-            XmlAttr front()    { return elem._attributes[start].get(); }
-            XmlAttr opIndex(size_t index) { return elem._attributes[start + index].get(); }
+            XmlAttr front()    { return elem._attributes[start]; }
+            XmlAttr opIndex(size_t index) { return elem._attributes[start + index]; }
         }
 
         static struct TagNameChildRange(bool Recursive)
@@ -677,7 +688,7 @@ public
         /// Returns: attribute's name.
         const(char)[] name()
         {
-            return _name.toDString;
+            return _name[];
         }
         ///ditto
         alias localName = name;
@@ -685,21 +696,22 @@ public
         /// Returns: attribute's value.
         const(char)[] value()
         {
-            return _value.toDString;
+            return _value[];
         }
 
     private:
         XmlElement _owner; // borrow ref to owning Element
-        nstring _name;
-        nstring _value;
+        Vec!char _name;
+        Vec!char _value;
     }
 }
 
 private:
 
-void appendCString(ref nstring str, const(char)* source)
+void appendCString(ref Vec!char str, const(char)* source)
 {
-    str ~= source[0..strlen(source)];
+    // const_cast here
+    str.pushBack(cast(char[]) source[0..strlen(source)]);
 }
 
 T unsafeObjectCast(T)(Object obj)

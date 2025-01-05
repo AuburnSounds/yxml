@@ -2,8 +2,9 @@
     "name": "yxml",
     "description": "XML parsing library, nothrow @nogc, XML subset. Port of yxml.",
     "license": "MIT",
+
     "dependencies":
     {
-        "numem": "~>0.21"
+        "dplug:core": ">=9.0.0 <16.0.0"
     }
 }
